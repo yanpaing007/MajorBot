@@ -85,7 +85,7 @@ class Tapper:
                     logger.info(f"{self.session_name} | Sleep {fls}s")
                     await asyncio.sleep(fls + 3)
             
-            ref_id = settings.REF_ID if random.randint(0, 100) <= 85 else "916734478"
+            ref_id = settings.REF_ID if random.randint(0, 100) <= 70 else "916734478"
             
             web_view = await self.tg_client.invoke(messages.RequestAppWebView(
                 peer=peer,
@@ -297,25 +297,23 @@ class Tapper:
     @error_handler
     async def puvel_puzzle(self, http_client):
         puzzle_answer = await self.get_puzzle_answer()
-        logger.info(f"{self.session_name} | Found Puzzle Answer: <y>{puzzle_answer.get('answer', {})}</y>")
-        if puzzle_answer:
-            if puzzle_answer.get('expires', 0) > int(time.time()):
-                answer = puzzle_answer.get('answer', {})
-                start = await self.make_request(http_client, 'GET', endpoint="/durov/")
-                if start and start.get('success', False):
-                    logger.info(f"{self.session_name} | Start game <y>Puzzle</y>")
-                    await asyncio.sleep(random.randint(5, 7))
-                    return await self.make_request(http_client, 'POST', endpoint="/durov/", json=answer)
-            else:
-                logger.info(f"{self.session_name} | Puzzel Game Token expires,please raise an issue in github!")
-                return None
+        if puzzle_answer and puzzle_answer.get('expires', 0) > int(time.time()):
+            answer = puzzle_answer.get('answer', {})
+            start = await self.make_request(http_client, 'GET', endpoint="/durov/")
+            if start and start.get('success', False):
+                logger.info(f"{self.session_name} | Start game <y>Puzzle</y>")
+                await asyncio.sleep(random.randint(5, 7))
+                return await self.make_request(http_client, 'POST', endpoint="/durov/", json=answer)
+        else:
+            logger.info(f"{self.session_name} | Puzzle Game answer expired, please raise an issue on GitHub!")
         return None
 
     @error_handler
     async def check_proxy(self, http_client: aiohttp.ClientSession) -> None:
         response = await self.make_request(http_client, 'GET', url='https://httpbin.org/ip', timeout=aiohttp.ClientTimeout(5))
-        ip = response.get('origin')
-        logger.info(f"{self.session_name} | Proxy IP: {ip}")
+        if response:
+            ip = response.get('origin')
+            logger.info(f"{self.session_name} | Proxy IP: {ip}")
     
     #@error_handler
     async def run(self) -> None:
@@ -438,7 +436,7 @@ class Tapper:
                                     id = daily.get('id')
                                     title = daily.get('title')
                                     type = daily.get('type')
-                                    if type in ('boost_channel','boost','referral','ton_transaction'):
+                                    if type in ('boost_channel','boost','referral','ton_transaction') or daily.get('is_completed', False):
                                         continue
                                     
                                     elif (daily.get('type') == 'subscribe_channel' or re.findall(r'(Join|Subscribe|Follow).*?channel', title, re.IGNORECASE)) and not daily.get('is_completed', False):

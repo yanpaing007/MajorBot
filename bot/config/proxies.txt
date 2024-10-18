@@ -1,3 +1,0 @@
-type://ip:port@username:pass
-type://ip:port:username:pass
-type://ip:port
