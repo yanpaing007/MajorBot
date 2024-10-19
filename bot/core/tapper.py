@@ -412,7 +412,7 @@ class Tapper:
                     await asyncio.sleep(random.randint(5, 10))
               
                     if task_name in ['HoldCoins', 'SwipeCoins', 'Roulette', 'Puzzle']:
-                        logger.info(f"{self.session_name} | Starting Major Task: <y>{task_name}</y>")
+                        logger.info(f"{self.session_name} | Starting Game: <y>{task_name}</y>")
                         try:
                             result = await task_func(http_client=http_client)
                             if result:
