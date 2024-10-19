@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta
 import random
 from urllib.parse import unquote
 
@@ -12,6 +13,8 @@ import time
 import re
 import json
 from pyrogram.raw.types import InputBotAppShortName, InputNotifyPeer, InputPeerNotifySettings
+import pytz
+from tzlocal import get_localzone
 from .agents import generate_random_user_agent
 from bot.config import settings
 from typing import Callable
@@ -41,6 +44,26 @@ def error_handler(func: Callable):
         except Exception as e:
             await asyncio.sleep(1)
     return wrapper
+
+def is_puzzle_expired(expiration_time_utc_str):
+    local_tz = get_localzone()
+    utc_tz = pytz.utc
+    expiration_time_utc = datetime.strptime(expiration_time_utc_str, '%Y-%m-%d %I:%M %p')
+    expiration_time_utc = utc_tz.localize(expiration_time_utc)
+    expiration_time_local = expiration_time_utc.astimezone(local_tz)
+    current_time = datetime.now(local_tz)
+    return current_time >= expiration_time_local
+
+def convert_date_format(date_str):
+    """
+    Converts a date from DD-MM-YYYY format to YYYY-MM-DD format.
+    """
+    try:
+        date_obj = datetime.strptime(date_str, '%d-%m-%Y')
+        increased_date_obj = date_obj + timedelta(days=1)
+        return increased_date_obj.strftime('%Y-%m-%d')
+    except ValueError:
+        return None
 
 class Tapper:
     def __init__(self, tg_client: Client, proxy: str):
@@ -263,8 +286,43 @@ class Tapper:
                 status = response.status
                 if status == 200:
                     response_data = json.loads(await response.text())
-                    
-                    return response_data
+                    expire=response_data.get('expires', 0)
+                    if is_puzzle_expired(expire):
+                        logger.info("The puzzle has expired.Retrying from backup puzzle repo....")
+                        async with session.get("https://raw.githubusercontent.com/zuydd/database/refs/heads/main/major.json") as response:
+                            status = response.status
+                            if status == 200:
+                                response_data = json.loads(await response.text())
+                                durov_data = response_data.get('durov', {})
+                                puzzle_day_str = durov_data.get('day', None)
+                                puzzle = durov_data.get('answer', [])
+                                if puzzle_day_str and puzzle:
+                                    puzzle_day_str = convert_date_format(puzzle_day_str)
+                                    if puzzle_day_str:
+                                        puzzle_day_str += " 12:00 AM"
+                                        if is_puzzle_expired(puzzle_day_str):
+                                            logger.info("The backup puzzle has expired too.")
+                                            return None
+                                        else:
+                                            payload = {
+                                                        "choice_1": puzzle[0],
+                                                        "choice_2": puzzle[1],
+                                                        "choice_3": puzzle[2],
+                                                        "choice_4": puzzle[3],
+                                                    }
+                                            logger.info(f"Backup puzzle retrieved successfully: {puzzle}")
+                                            return payload
+                                    else:
+                                        logger.error("Invalid date format in puzzle day.")
+                                        return None
+                            else:
+                                logger.error(f"{self.session_name} | Failed to get backup puzzle answer")
+                                return None
+                    else:
+                        puzzle = response_data.get('answer', {})
+                        logger.info(f"{self.session_name} | Puzzle retrieved successfully: {puzzle}")
+                        return puzzle
+                                
                 else:
                     logger.error(f"{self.session_name} | Failed to get puzzle answer")
         
@@ -297,13 +355,12 @@ class Tapper:
     @error_handler
     async def puvel_puzzle(self, http_client):
         puzzle_answer = await self.get_puzzle_answer()
-        if puzzle_answer and puzzle_answer.get('expires', 0) > int(time.time()):
-            answer = puzzle_answer.get('answer', {})
+        if puzzle_answer:
             start = await self.make_request(http_client, 'GET', endpoint="/durov/")
             if start and start.get('success', False):
                 logger.info(f"{self.session_name} | Start game <y>Puzzle</y>")
                 await asyncio.sleep(random.randint(5, 7))
-                return await self.make_request(http_client, 'POST', endpoint="/durov/", json=answer)
+                return await self.make_request(http_client, 'POST', endpoint="/durov/", json=puzzle_answer)
         else:
             logger.info(f"{self.session_name} | Puzzle Game answer expired, please raise an issue on GitHub!")
         return None
@@ -444,13 +501,15 @@ class Tapper:
                                             continue
                                         await self.join_and_mute_tg_channel(link=daily.get('payload').get('url'))
                                         await asyncio.sleep(random.randint(5, 10))
-
-                                    logger.info(f"{self.session_name} | Executing Daily Task: {title}")
-                                    data_done = await self.done_tasks(http_client=http_client, task_id=id)
-                                    if data_done and data_done.get('is_completed') is True:
-                                        logger.info(f"{self.session_name} | Daily Task : <y>{title}</y> | Reward : <y>{daily.get('award')}⭐</y>")
+                                    if daily:
+                                        logger.info(f"{self.session_name} | Executing Daily Task: {title}")
+                                        data_done = await self.done_tasks(http_client=http_client, task_id=id)
+                                        if data_done and data_done.get('is_completed') is True:
+                                            logger.info(f"{self.session_name} | Daily Task : <y>{title}</y> | Reward : <y>{daily.get('award')}⭐</y>")
+                                        else:
+                                            logger.warning(f"{self.session_name} | Daily Task {title} not completed")
                                     else:
-                                        logger.warning(f"{self.session_name} | Daily Task {title} not completed")
+                                        logger.warning(f"{self.session_name} | No Daily Tasks available!")
         
                                    
                             else:
@@ -481,13 +540,15 @@ class Tapper:
                                             continue
                                         await self.join_and_mute_tg_channel(link=task.get('payload').get('url'))
                                         await asyncio.sleep(random.randint(5, 10))
-                                        
-                                    logger.info(f"{self.session_name} | Executing Main Task: {title}")
-                                    data_done = await self.done_tasks(http_client=http_client, task_id=id)
-                                    if data_done and data_done.get('is_completed') is True:
-                                        logger.info(f"{self.session_name} | Task : <y>{title}</y> | Reward : <y>{task.get('award')}⭐</y>")
+                                    if task:
+                                        logger.info(f"{self.session_name} | Executing Main Task: {title}")
+                                        data_done = await self.done_tasks(http_client=http_client, task_id=id)
+                                        if data_done and data_done.get('is_completed') is True:
+                                            logger.info(f"{self.session_name} | Task : <y>{title}</y> | Reward : <y>{task.get('award')}⭐</y>")
+                                        else:
+                                            logger.warning(f"{self.session_name} | Main Task {title} not completed")
                                     else:
-                                        logger.warning(f"{self.session_name} | Main Task {title} not completed")
+                                        logger.warning(f"{self.session_name} | No Main Tasks available!")
                             else:
                                 logger.warning(f"{self.session_name} | No Main Tasks returned")
                         except Exception as e:
