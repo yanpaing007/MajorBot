@@ -283,48 +283,56 @@ class Tapper:
     async def get_puzzle_answer(self):
         async with aiohttp.ClientSession() as session:
             async with session.get("https://raw.githubusercontent.com/yanpaing007/MajorBot/refs/heads/main/answers.json") as response:
-                status = response.status
-                if status == 200:
-                    response_data = json.loads(await response.text())
-                    expire=response_data.get('expires', 0)
-                    if is_puzzle_expired(expire):
-                        logger.info("The puzzle has expired.Retrying from backup puzzle repo....")
-                        async with session.get("https://raw.githubusercontent.com/zuydd/database/refs/heads/main/major.json") as response:
-                            status = response.status
-                            if status == 200:
-                                response_data = json.loads(await response.text())
-                                durov_data = response_data.get('durov', {})
+                try:
+                       
+                        if response.status != 200:
+                            logger.error(f"{self.session_name} | Failed to get puzzle answer: {response.status}")
+                            return None
+                        text = await response.text()
+                        data = json.loads(text)
+                        expire = data.get('expires', 0)
+                        
+                        if is_puzzle_expired(expire):
+                            logger.info(f"{self.session_name} | The puzzle has expired. Retrying from backup puzzle repo...")
+                        
+                            async with session.get("https://raw.githubusercontent.com/zuydd/database/refs/heads/main/major.json") as backup_response:
+                                if backup_response.status != 200:
+                                    logger.error(f"{self.session_name} | Failed to get backup puzzle answer: {backup_response.status}")
+                                    return None
+                                text = await response.text()
+                                backup_data = json.loads(text)
+                                durov_data = backup_data.get('durov', {})
                                 puzzle_day_str = durov_data.get('day', None)
                                 puzzle = durov_data.get('answer', [])
-                                if puzzle_day_str and puzzle:
-                                    puzzle_day_str = convert_date_format(puzzle_day_str)
-                                    if puzzle_day_str:
-                                        puzzle_day_str += " 12:00 AM"
-                                        if is_puzzle_expired(puzzle_day_str):
-                                            logger.info("The backup puzzle has expired too.")
-                                            return None
-                                        else:
-                                            payload = {
-                                                        "choice_1": puzzle[0],
-                                                        "choice_2": puzzle[1],
-                                                        "choice_3": puzzle[2],
-                                                        "choice_4": puzzle[3],
-                                                    }
-                                            logger.info(f"Backup puzzle retrieved successfully: {puzzle}")
-                                            return payload
-                                    else:
-                                        logger.error("Invalid date format in puzzle day.")
+
+                                if not puzzle_day_str or not puzzle:
+                                    logger.error("Invalid backup puzzle data.")
+                                    return None
+                                
+                                puzzle_day_str = convert_date_format(puzzle_day_str)
+                                if puzzle_day_str:
+                                    puzzle_day_str += " 12:00 AM"  
+                                    if is_puzzle_expired(puzzle_day_str):
+                                        logger.info(f"{self.session_name} | The backup puzzle has expired too.")
                                         return None
-                            else:
-                                logger.error(f"{self.session_name} | Failed to get backup puzzle answer")
+                                
+                                    payload = {
+                                        "choice_1": puzzle[0],
+                                        "choice_2": puzzle[1],
+                                        "choice_3": puzzle[2],
+                                        "choice_4": puzzle[3],
+                                    }
+                                    logger.info(f"{self.session_name} | Backup puzzle retrieved successfully: {puzzle}")
+                                    return payload
+                                
+                                logger.error("Invalid date format in backup puzzle day.")
                                 return None
-                    else:
-                        puzzle = response_data.get('answer', {})
+
+                        puzzle = data.get('answer', {})
                         logger.info(f"{self.session_name} | Puzzle retrieved successfully: {puzzle}")
                         return puzzle
-                                
-                else:
-                    logger.error(f"{self.session_name} | Failed to get puzzle answer")
+                except Exception as e:
+                    return None
         
         
     
@@ -355,14 +363,22 @@ class Tapper:
     @error_handler
     async def puvel_puzzle(self, http_client):
         puzzle_answer = await self.get_puzzle_answer()
-        if puzzle_answer:
+        if puzzle_answer is not None:
             start = await self.make_request(http_client, 'GET', endpoint="/durov/")
             if start and start.get('success', False):
-                logger.info(f"{self.session_name} | Start game <y>Puzzle</y>")
+                logger.info(f"{self.session_name} | Started game <y>Puzzle</y>")
                 await asyncio.sleep(random.randint(5, 7))
-                return await self.make_request(http_client, 'POST', endpoint="/durov/", json=puzzle_answer)
+                
+                # Send the puzzle answer
+                result = await self.make_request(http_client, 'POST', endpoint="/durov/", json=puzzle_answer)
+                if result:
+                    logger.info(f"{self.session_name} | Puzzle submitted successfully.")
+                    return result
+                else:
+                    logger.warning(f"{self.session_name} | Failed to submit puzzle answer.")
         else:
-            logger.info(f"{self.session_name} | Puzzle Game answer expired, please raise an issue on GitHub!")
+            logger.info(f"{self.session_name} | Both Puzzle Game answer expired, please raise an issue on GitHub!")
+
         return None
 
     @error_handler
@@ -477,14 +493,14 @@ class Tapper:
                                 reward = "+5000⭐" if task_name == 'Puzzle' else f"+{result}⭐"
                                 logger.info(f"{self.session_name} | Reward {task_name}: <y>{reward}</y>")
                             else:
-                                logger.info(f"{self.session_name} | Game <y>{task_name}</y> seems to be have completed")
+                                logger.info(f"{self.session_name} | Game <y>{task_name}</y> seems to have completed.")
                         except Exception as e:
                             logger.error(f"{self.session_name} | Major Task <y>{task_name}</y> failed with error: {e}")
 
                     
                     elif task_name == 'd_tasks':
-                        logger.info(f"{self.session_name} | Starting Daily Tasks")
                         try:
+                            logger.info(f"{self.session_name} | Executing Daily Tasks")
                             data_daily = await task_func(http_client=http_client)
                             if data_daily:
                                 random.shuffle(data_daily)
@@ -519,8 +535,8 @@ class Tapper:
 
                     
                     elif task_name == 'm_tasks':
-                        logger.info(f"{self.session_name} | Starting Main Tasks")
                         try:
+                            logger.info(f"{self.session_name} | Executing Main Tasks")
                             data_task = await task_func(http_client=http_client)
                             if data_task:
                                 random.shuffle(data_task)
