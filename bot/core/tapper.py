@@ -299,7 +299,7 @@ class Tapper:
                                 if backup_response.status != 200:
                                     logger.error(f"{self.session_name} | Failed to get backup puzzle answer: {backup_response.status}")
                                     return None
-                                text = await response.text()
+                                text = await backup_response.text()
                                 backup_data = json.loads(text)
                                 durov_data = backup_data.get('durov', {})
                                 puzzle_day_str = durov_data.get('day', None)
