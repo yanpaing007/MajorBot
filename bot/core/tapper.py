@@ -362,22 +362,21 @@ class Tapper:
     
     @error_handler
     async def puvel_puzzle(self, http_client):
-        puzzle_answer = await self.get_puzzle_answer()
-        if puzzle_answer is not None:
-            start = await self.make_request(http_client, 'GET', endpoint="/durov/")
-            if start and start.get('success', False):
-                logger.info(f"{self.session_name} | Started game <y>Puzzle</y>")
-                await asyncio.sleep(random.randint(5, 7))
-                
-                # Send the puzzle answer
+        
+        start = await self.make_request(http_client, 'GET', endpoint="/durov/")
+        if start and start.get('success', False):
+            logger.info(f"{self.session_name} | Started game <y>Puzzle</y>")
+            await asyncio.sleep(random.randint(5, 7))
+            puzzle_answer = await self.get_puzzle_answer()
+            if puzzle_answer is not None:
                 result = await self.make_request(http_client, 'POST', endpoint="/durov/", json=puzzle_answer)
                 if result:
                     logger.info(f"{self.session_name} | Puzzle submitted successfully.")
                     return result
                 else:
                     logger.warning(f"{self.session_name} | Failed to submit puzzle answer.")
-        else:
-            logger.info(f"{self.session_name} | Both Puzzle Game answer expired, please raise an issue on GitHub!")
+            else:
+                logger.info(f"{self.session_name} | Both Puzzle Game answer expired, please raise an issue on GitHub!")
 
         return None
 
